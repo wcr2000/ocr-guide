@@ -103,13 +103,9 @@
 - **Python ≥3.10**; create an isolated env with `python -m venv .venv && source .venv/bin/activate`.
 - **Core tooling**:
   - `pip install opencv-python pillow numpy pandas matplotlib`
-  - `pip install pytesseract` (requires native Tesseract install)
   - `pip install easyocr` (built-in Thai models)
   - `pip install paddleocr` (strong multilingual support, incl. Thai)
-  - `pip install pdf2image pikepdf` for PDFs → images.
 - **Native dependencies**:
-  - Tesseract OCR (Homebrew: `brew install tesseract tesseract-lang`).
-  - Poppler (`brew install poppler`) for `pdf2image`.
   - CUDA/cuDNN if you plan to run GPU-accelerated models (PaddleOCR, EasyOCR, TrOCR, etc.).
 
 ## 3. Data Acquisition & Storage
@@ -119,7 +115,7 @@
 - **Versioning**: use DVC or Git LFS if datasets are large.
 
 ## 4. Preprocessing Steps
-- **Conversion**: PDF → image using `pdf2image.convert_from_path`.
+- **Conversion**: PDF → image using PyMuPDF (`fitz`) matrix zoom (ดูตัวอย่างใน `main.py`).
 - **Resolution**: aim 300 DPI for PDFs; upscale low-resolution images via `cv2.dnn_superres`.
 - **Noise reduction**: bilateral filter, median blur, non-local means (`cv2.fastNlMeansDenoisingColored`).
 - **Binarization**: Otsu threshold, adaptive threshold, Sauvola (from `skimage`).
@@ -159,20 +155,27 @@
   - `lama-cleaner`, `imgaug`, `albumentations` for preprocessing/augmentation combos.
 
 ## 6. Inference Workflow (Python)
-- **Basic example** (Tesseract):
+- **PyMuPDF + EasyOCR pipeline** (อิงโค้ด `main.py` บรรทัด 14-15 เป็นต้นไป):
 
 ```python
-from pdf2image import convert_from_path
-import pytesseract, pandas as pd
+import io
+import numpy as np
+import fitz  # PyMuPDF
+from PIL import Image
+from easyocr import Reader
 
-images = convert_from_path("input.pdf", dpi=300)
-results = []
-for page_idx, img in enumerate(images):
-    text = pytesseract.image_to_string(img, lang="tha+eng", config="--psm 6")
-    results.append({"page": page_idx + 1, "text": text})
+reader = Reader(["th", "en"], gpu=False)
+doc = fitz.open("data/บัญชีทรัพย์สินและหนี้สิน.pdf")
 
-df = pd.DataFrame(results)
-df.to_csv("ocr_output/output.csv", index=False)
+for page_idx in range(len(doc)):
+    page = doc.load_page(page_idx)
+    matrix = fitz.Matrix(3.0, 3.0)  # ปรับ DPI ได้ด้วย ZOOM_X/ZOOM_Y
+    pix = page.get_pixmap(matrix=matrix, alpha=False)
+    image = Image.open(io.BytesIO(pix.tobytes("ppm"))).convert("RGB")
+    text_lines = reader.readtext(np.array(image), detail=0, paragraph=True)
+    print(f"Page {page_idx + 1}:", "\n".join(text_lines))
+
+doc.close()
 ```
 
 - **Detection + recognition** (PaddleOCR) for bounding boxes and text:

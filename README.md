@@ -46,6 +46,44 @@
   - เพิ่ม post-processing ภาษาไทยด้วย `pythainlp` สำหรับตัดคำ/สะกด  
   - รวมผลในฐานข้อมูล หรือสร้าง Dashboard สรุปข้อมูล
 
+## Installation & Project Setup
+- **Clone repository**
+  ```powershell
+  git clone https://github.com/<your-org>/ocr-guide.git
+  cd ocr-guide
+  ```
+- **Create virtual environment (แนะนำ)**
+  ```powershell
+  python -m venv .venv
+  .\.venv\Scripts\activate
+  ```
+  > macOS/Linux: `python3 -m venv .venv && source .venv/bin/activate`
+- **Install dependencies**
+  ```powershell
+  pip install --upgrade pip
+  pip install -r requirements.txt
+  ```
+  - `requirements.txt` รวม EasyOCR (ต้องโหลด weight ครั้งแรก), PyMuPDF, Pillow, numpy และ Torch (CPU build)
+  - หากต้องการลดขนาด สามารถลบแพ็กเกจที่ไม่ใช้แล้วรัน `pip install` เฉพาะส่วนที่ต้องการ
+- **Optional GPU (ถ้ามี CUDA)**: ติดตั้ง torch/torchvision ที่ตรงกับเวอร์ชัน CUDA ของคุณจาก [PyTorch.org](https://pytorch.org/get-started/locally/)
+- **ตั้งค่าเอกสารตัวอย่าง**
+  - วางไฟล์ PDF ใน `data/` แล้วแก้ `PDF_PATH` ใน `main.py` หากต้องการใช้ชื่ออื่น
+  - รันเทสด้วย `python main.py` เพื่อยืนยันว่า folder `output/images` และ `output/text` ถูกสร้างและมีผลลัพธ์
+
+## 1.1 Code-first Overview (`main.py`)
+- **Entry point**: `python main.py` จะเรียก `main()` ซึ่งเตรียมโฟลเดอร์ `output/`, `output/images/`, `output/text/`
+- **Rendering**: `convert_pdf_to_images()` ใช้ PyMuPDF (`fitz`) แปลงทุกหน้าของ `PDF_PATH` เป็นภาพความละเอียดสูง แล้วเซฟเป็น `output/images/output_page_{n}.png`
+- **OCR Streaming**: `run_easyocr()` สร้างอินสแตนซ์ EasyOCR Thai+English แล้ววนทีละหน้า  
+  - แปลง `PIL.Image` → NumPy array → ส่งเข้า `Reader.readtext()`  
+  - บันทึกผลทีละบรรทัดลง `output/text/ocr_output.csv` พร้อม `flush()` เพื่อให้ดูผลได้ทันที  
+  - สร้างไฟล์ข้อความรายหน้า `output/text/ocr_page_{n}.txt`
+- **Configuration knobs**:  
+  - `PDF_PATH`: ที่อยู่ไฟล์ PDF  
+  - `ZOOM_X`, `ZOOM_Y`: ตัวคูณ DPI (3.0 ≈ 216 DPI, 4.17 ≈ 300 DPI)  
+  - `EASY_OCR_AVAILABLE`: ตรวจจับอัตโนมัติ (ติดตั้ง easyocr ก่อนรันหรือจะสั่ง `pip install easyocr`)  
+  - ปรับค่าเหล่านี้โดยตรงใน `main.py` เพื่อให้ตรงกับเอกสารของคุณ
+- **Dependencies ใน `requirements.txt`**: ควรติดตั้งตามไฟล์ (PyMuPDF, Pillow, numpy, EasyOCR ฯลฯ) เพื่อให้ฟังก์ชันใน `main.py` ใช้งานได้ครบ
+
 ### เส้นทางพัฒนาถัดไป & แนวทางเพิ่มคุณภาพ
 - **Preprocessing เฉพาะเอกสารไทย**: ลองใช้ OpenCV เพื่อลด noise, ปรับ contrast, deskew ก่อน OCR เพื่อเพิ่มความแม่นยำของตัวอักษรที่มีวรรณยุกต์
 - **Model Ensemble**: เรียกใช้ EasyOCR พร้อม PaddleOCR หรือ Tesseract แล้วรวมผล (เลือกข้อความที่มี confidence สูงสุด)

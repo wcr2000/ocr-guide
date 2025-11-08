@@ -26,6 +26,41 @@
 - **Use cases**: Scanned paperwork, receipts, invoices, forms, printed books, street signs, mixed-language documents.
 - **Pipeline summary**: Data acquisition → preprocessing → OCR inference → post-processing → export (text/CSV) → optional fine-tuning or LLM correction.
 
+## Quickstart Walkthrough (Step-by-step)
+- **1. เตรียมสภาพแวดล้อม**  
+  - ติดตั้ง Python ≥3.10 แล้วรัน `python -m venv .venv`, `.\.venv\Scripts\activate` (Windows)  
+  - `pip install -r requirements.txt` (จะดึง PyMuPDF, Pillow, numpy, EasyOCR)
+- **2. เตรียมข้อมูล**  
+  - ใส่ไฟล์ PDF เป้าหมายไว้ใน `data/` (ตัวอย่าง: `บัญชีทรัพย์สินและหนี้สิน.pdf`)
+- **3. แปลง PDF → ภาพ**  
+  - รัน `python main.py`  
+  - สคริปต์จะเรนเดอร์ทุกหน้าเป็น `.png` ที่ `output/images/output_page_*.png`
+- **4. รัน OCR ภาษาไทย**  
+  - ขั้นตอนในสคริปต์จะใช้ EasyOCR (ถ้าติดตั้งไว้) แปลงภาพเป็นข้อความ  
+  - ผลลัพธ์บันทึกเป็นไฟล์ `output/text/ocr_output.csv` (คอลัมน์ `page`, `text`) พร้อมไฟล์แยกต่อหน้า `output/text/ocr_page_*.txt`
+- **5. ตรวจสอบคุณภาพ**  
+  - เปิดไฟล์ภาพและ CSV ตรวจตัวอย่างข้อความ  
+  - ปรับค่า `ZOOM_X` / `ZOOM_Y` หรือ preprocessing เพิ่มเติมในสคริปต์ตามต้องการ
+- **6. ขยายต่อยอด**  
+  - หากต้องการ layout/table extraction → ใช้ PaddleOCR หรือ Document AI  
+  - เพิ่ม post-processing ภาษาไทยด้วย `pythainlp` สำหรับตัดคำ/สะกด  
+  - รวมผลในฐานข้อมูล หรือสร้าง Dashboard สรุปข้อมูล
+
+### เส้นทางพัฒนาถัดไป & แนวทางเพิ่มคุณภาพ
+- **Preprocessing เฉพาะเอกสารไทย**: ลองใช้ OpenCV เพื่อลด noise, ปรับ contrast, deskew ก่อน OCR เพื่อเพิ่มความแม่นยำของตัวอักษรที่มีวรรณยุกต์
+- **Model Ensemble**: เรียกใช้ EasyOCR พร้อม PaddleOCR หรือ Tesseract แล้วรวมผล (เลือกข้อความที่มี confidence สูงสุด)
+- **Post-correction ภาษาไทย**: ใช้ `pythainlp` ทำการตัดคำและตรวจสะกด หรือใช้ LLM ช่วยปรับแก้ข้อความตาม domain
+- **ระบบ Feedback Loop**: สร้างสคริปต์เปรียบเทียบผล OCR กับคำตอบที่ถูกต้อง (ground truth) เพื่อ track CER/WER และระบุหน้าที่ควรปรับปรุง
+- **รองรับเอกสารจำนวนมาก**: แตก pipeline เป็น job ต่อหน้า (multiprocessing) และเพิ่ม logging/monitoring เพื่อตรวจผลการรัน
+
+### แนวคิดสำหรับการ Extract ตารางจาก PDF/ภาพ
+- **PaddleOCR Layout/Table Modules**: ใช้ `PaddleDetection` สำหรับหาเส้นตาราง + `PaddleOCR` สำหรับอ่าน cell แล้ว map กลับเป็นโครงสร้าง grid
+- **Table Transformer (Microsoft)**: โมเดล `microsoft/table-transformer` บน Hugging Face สามารถ detect โครงสร้างตารางเป็น HTML หรือ Markdown
+- **LLM-based Parsing**: ส่ง bounding boxes + ข้อความ (จาก OCR) เข้า LLM เช่น GPT-4o พร้อม prompt ให้วิเคราะห์และสร้าง CSV/JSON ตาราง
+- **OpenCV Table Detection**: ใช้การ threshold + `cv2.findContours` เพื่อหาคอลัมน์/แถว แล้วตัดภาพย่อยก่อนส่งเข้า OCR (ช่วยลดการอ่านผิดตำแหน่ง)
+- **Document AI Services**: ถ้าไม่ติดข้อจำกัดด้านข้อมูล ลอง Google Document AI, AWS Textract, Azure Form Recognizer ซึ่งรองรับ table extraction พร้อม confidence score และโครงสร้าง cell
+- **Post-processing Rules**: หลังดึงข้อมูลมาแล้ว ใช้กฎ domain-specific (regex สำหรับตัวเลข, วันที่, คอลัมน์ที่ต้องมีหน่วย) เพื่อตรวจและจัดรูปแบบตารางก่อนบันทึก
+
 ## 2. Environment Setup
 - **Python ≥3.10**; create an isolated env with `python -m venv .venv && source .venv/bin/activate`.
 - **Core tooling**:
@@ -178,7 +213,8 @@ result = ocr.ocr("invoice.jpg", cls=True)
   - `https://github.com/vistec-AIT/` for Thai NLP datasets.
 
 ## 13. Next Steps for the Team
-- Stand up a prototype with EasyOCR or PaddleOCR to validate accuracy on internal docs.
-- Collect failed cases; annotate for fine-tuning.
-- Evaluate LLM-based post-correction for high-precision use cases.
-- Document pipeline scripts/tests; integrate into CI for regression checks.
+- เสริม preprocessing pipeline (deskew, adaptive thresholding) และวัดผล CER/WER เทียบ baseline ปัจจุบัน
+- เปรียบเทียบผล EasyOCR กับ PaddleOCR และพิจารณาใช้ร่วมกันเพื่อเพิ่มความแม่นยำ
+- ตั้ง workflow สำหรับ extract ตาราง: ทดลอง PaddleOCR table, Table Transformer, หรือ OpenCV-based table detection แล้วบันทึกเป็น CSV
+- ออกแบบ post-correction (PyThaiNLP หรือ LLM) และระบบ feedback loop สำหรับปรับปรุงข้อความ OCR อย่างต่อเนื่อง
+- บันทึกสคริปต์/การตั้งค่าปัจจุบัน พร้อมทดสอบอัตโนมัติสำหรับหน้าที่ปรับแล้ว เพื่อป้องกัน regression ในอนาคต
